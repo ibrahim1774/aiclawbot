@@ -284,7 +284,7 @@ export default function SetupKeysPage() {
             </a>
             <div>
               <button
-                onClick={() => router.push("/")}
+                onClick={() => router.push("/dashboard")}
                 className="mt-4 rounded-lg bg-white px-6 py-2.5 text-sm font-semibold text-black transition-colors hover:bg-white/90"
               >
                 Go to Dashboard

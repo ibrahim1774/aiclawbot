@@ -11,6 +11,7 @@ import {
   Send,
   Star,
   MessageCircle,
+  Activity,
 } from "lucide-react";
 
 type Model = "claude-opus-4-5" | "gpt-5-2" | "gemini-3-flash";
@@ -258,6 +259,14 @@ export default function DeployCard() {
           <p className="text-xs text-muted">
             Open Telegram and message your bot to start chatting.
           </p>
+          <button
+            onClick={() => router.push("/dashboard")}
+            className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-accent-green transition-colors hover:text-accent-green/80"
+          >
+            <Activity className="h-3 w-3" />
+            Go to Dashboard
+          </button>
+          <br />
           <a
             href="https://t.me/"
             target="_blank"

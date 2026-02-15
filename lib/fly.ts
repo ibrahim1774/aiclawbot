@@ -210,6 +210,16 @@ export async function stopDeployment(
   });
 }
 
+// ─── startDeployment ─────────────────────────────────────────────────
+export async function startDeployment(
+  machineId: string,
+  appName: string
+) {
+  await flyRequest(`/apps/${appName}/machines/${machineId}/start`, {
+    method: "POST",
+  });
+}
+
 // ─── deleteDeployment ────────────────────────────────────────────────
 export async function deleteDeployment(appName: string) {
   // Stop all machines first, then delete the app
