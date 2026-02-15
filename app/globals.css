@@ -9,7 +9,7 @@
   --color-accent-purple: #a855f7;
   --color-accent-coral: #f87171;
   --color-accent-green: #22c55e;
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Avenir Next", "Avenir", "Helvetica Neue", "Helvetica", "Arial", sans-serif;
 }
 
 html {

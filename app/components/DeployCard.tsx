@@ -84,15 +84,25 @@ export default function DeployCard() {
   function handleDeploy() {
     const token = localStorage.getItem("telegramToken");
     const apiKey = localStorage.getItem("apiKey");
-    if (!token || !apiKey) {
-      router.push("/connect");
+
+    // Both present — deploy directly
+    if (token && apiKey) {
+      setDeployState("deploying");
+      setTimeout(() => {
+        localStorage.setItem("deployed", "true");
+        setDeployState("success");
+      }, 3000);
       return;
     }
-    setDeployState("deploying");
-    setTimeout(() => {
-      localStorage.setItem("deployed", "true");
-      setDeployState("success");
-    }, 3000);
+
+    // Token exists but no API key — skip /connect, go to /setup-keys
+    if (token && !apiKey) {
+      router.push("/setup-keys");
+      return;
+    }
+
+    // No token — go to /connect first
+    router.push("/connect");
   }
 
   const isLiveOrSuccess = deployState === "success" || deployState === "live";
