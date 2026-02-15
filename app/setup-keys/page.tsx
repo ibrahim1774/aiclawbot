@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
   Sparkles,
@@ -11,9 +11,17 @@ import {
   Loader2,
   Key,
   ArrowLeft,
+  AlertCircle,
 } from "lucide-react";
 
 type Model = "claude-opus-4-5" | "gpt-5-2" | "gemini-3-flash";
+type DeployState = "idle" | "deploying" | "success" | "error";
+
+const MODEL_TO_PROVIDER: Record<Model, string> = {
+  "claude-opus-4-5": "anthropic",
+  "gpt-5-2": "openai",
+  "gemini-3-flash": "google",
+};
 
 const providerConfig: Record<
   Model,
@@ -79,6 +87,9 @@ const providerConfig: Record<
 
 const modelIds: Model[] = ["claude-opus-4-5", "gpt-5-2", "gemini-3-flash"];
 
+const POLL_INTERVAL = 3000;
+const MAX_POLL_TIME = 600000; // 10 minutes
+
 export default function SetupKeysPage() {
   const router = useRouter();
   const [selectedModel, setSelectedModel] = useState<Model>("claude-opus-4-5");
@@ -92,9 +103,17 @@ export default function SetupKeysPage() {
     "gpt-5-2": false,
     "gemini-3-flash": false,
   });
-  const [deployState, setDeployState] = useState<
-    "idle" | "deploying" | "success"
-  >("idle");
+  const [deployState, setDeployState] = useState<DeployState>("idle");
+  const [errorMessage, setErrorMessage] = useState("");
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollStartRef = useRef<number>(0);
+
+  const stopPolling = useCallback(() => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  }, []);
 
   useEffect(() => {
     // Guard: redirect to /connect if no telegram token
@@ -113,7 +132,9 @@ export default function SetupKeysPage() {
     if (existingKey && model && model in providerConfig) {
       setKeys((prev) => ({ ...prev, [model]: existingKey }));
     }
-  }, [router]);
+
+    return () => stopPolling();
+  }, [router, stopPolling]);
 
   function handleVerify(modelId: Model) {
     if (!keys[modelId].trim()) return;
@@ -128,23 +149,111 @@ export default function SetupKeysPage() {
     setVerified((prev) => ({ ...prev, [modelId]: false }));
   }
 
-  function handleSaveAndDeploy() {
+  function startPolling(serviceId: string, projectId: string) {
+    pollStartRef.current = Date.now();
+
+    pollRef.current = setInterval(async () => {
+      try {
+        const res = await fetch(
+          `/api/deploy/status?serviceId=${encodeURIComponent(serviceId)}&projectId=${encodeURIComponent(projectId)}`
+        );
+        const data = await res.json();
+
+        if (data.status === "running") {
+          stopPolling();
+          localStorage.setItem("deployed", "true");
+          setDeployState("success");
+          return;
+        }
+
+        if (data.status === "failed") {
+          stopPolling();
+          setDeployState("error");
+          const logHint = data.logs?.length
+            ? ` Logs: ${data.logs.slice(-3).join(" | ")}`
+            : "";
+          setErrorMessage(
+            `Deployment failed (${data.rawStatus || "unknown"}).${logHint} Check server console for full logs.`
+          );
+          // Store deploymentId for manual log inspection
+          if (data.deploymentId) {
+            localStorage.setItem("lastDeploymentId", data.deploymentId);
+          }
+          return;
+        }
+
+        // Timeout after 2 minutes
+        if (Date.now() - pollStartRef.current > MAX_POLL_TIME) {
+          stopPolling();
+          setDeployState("error");
+          setErrorMessage(
+            "Deployment timed out. Please try again or contact support."
+          );
+        }
+      } catch {
+        stopPolling();
+        setDeployState("error");
+        setErrorMessage("Failed to check deployment status.");
+      }
+    }, POLL_INTERVAL);
+  }
+
+  async function handleSaveAndDeploy() {
     // Prefer the selected model's key, otherwise use the first non-empty key
-    const activeModelId =
-      keys[selectedModel].trim()
-        ? selectedModel
-        : modelIds.find((id) => keys[id].trim()) ?? null;
+    const activeModelId = keys[selectedModel].trim()
+      ? selectedModel
+      : modelIds.find((id) => keys[id].trim()) ?? null;
 
     if (!activeModelId || !keys[activeModelId].trim()) return;
 
-    localStorage.setItem("apiKey", keys[activeModelId].trim());
+    const apiKey = keys[activeModelId].trim();
+    const telegramToken = localStorage.getItem("telegramToken");
+    if (!telegramToken) {
+      router.push("/connect");
+      return;
+    }
+
+    // Save to localStorage
+    localStorage.setItem("apiKey", apiKey);
     localStorage.setItem("selectedModel", activeModelId);
 
+    const aiProvider = MODEL_TO_PROVIDER[activeModelId];
+
     setDeployState("deploying");
-    setTimeout(() => {
-      localStorage.setItem("deployed", "true");
-      setDeployState("success");
-    }, 3000);
+    setErrorMessage("");
+
+    try {
+      const res = await fetch("/api/deploy", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          telegramToken,
+          aiApiKey: apiKey,
+          aiModel: activeModelId,
+          aiProvider,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setDeployState("error");
+        setErrorMessage(data.error || "Deployment failed. Please try again.");
+        return;
+      }
+
+      // Save project/service IDs for later reference
+      localStorage.setItem("projectId", data.projectId);
+      localStorage.setItem("serviceId", data.serviceId);
+
+      // Start polling for status
+      startPolling(data.serviceId, data.projectId);
+    } catch {
+      setDeployState("error");
+      setErrorMessage(
+        "Could not reach the deploy server. Please try again."
+      );
+    }
   }
 
   const hasAnyKey = Object.values(keys).some((k) => k.trim());
@@ -288,6 +397,14 @@ export default function SetupKeysPage() {
             );
           })}
         </div>
+
+        {/* Error message */}
+        {deployState === "error" && errorMessage && (
+          <div className="mt-4 flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-400">
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            {errorMessage}
+          </div>
+        )}
 
         {/* Save & Deploy button */}
         <div className="mt-8">

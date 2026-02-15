@@ -105,6 +105,18 @@ export default function DeployCard() {
     router.push("/connect");
   }
 
+  function handleReset() {
+    localStorage.removeItem("telegramToken");
+    localStorage.removeItem("apiKey");
+    localStorage.removeItem("selectedModel");
+    localStorage.removeItem("deployed");
+    localStorage.removeItem("projectId");
+    localStorage.removeItem("serviceId");
+    setDeployState("idle");
+    setIsConnected(false);
+    setSelectedModel("claude-opus-4-5");
+  }
+
   const isLiveOrSuccess = deployState === "success" || deployState === "live";
 
   return (
@@ -255,6 +267,12 @@ export default function DeployCard() {
             Open Telegram
             <ExternalLink className="h-3 w-3" />
           </a>
+          <button
+            onClick={handleReset}
+            className="mt-3 text-xs text-muted transition-colors hover:text-white"
+          >
+            Reset &amp; start over
+          </button>
         </div>
       )}
     </div>
